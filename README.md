@@ -1,1 +1,1 @@
-# imc_prosperity_competition
+# multi-agent-reinforcement-learning
