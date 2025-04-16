@@ -12,53 +12,76 @@ The multi-agent coordination problem is formulated as a partially observable Mar
 
 While computational constraints limit the scale of backtesting, the system demonstrates statistically significant outperformance versus baseline strategies in controlled experiments, particularly in regimes with elevated volatility.  This work provides a practical demonstration of how modern machine learning techniques can be adapted for quantitative trading while maintaining computational feasibility on limited hardware.
 
-Process Overview
-Data Cleaning & Feature Engineering
+## Process Overview
 
-Input: Raw L2 order book data (bid/ask prices, volumes, PnL) for each product (stocks, ETFs, etc.).
+### 1. Data Cleaning & Feature Engineering
 
-Cleaning: Handle missing values, outliers, and timestamp alignment.
+**Input**: Raw L2 order book data (bid/ask prices, volumes, PnL) for each product (stocks, ETFs, etc.)
 
-Feature Calculation: For each product, compute:
+**Processing**:
+- **Cleaning**:
+  - Handle missing values
+  - Remove outliers
+  - Align timestamps
 
-Classic Indicators: Rolling volatility, RSI, MACD, CCI, Z-score.
+- **Feature Calculation** (per product):
+  *Classic Indicators*:
+  - Rolling volatility
+  - RSI, MACD, CCI
+  - Z-score normalization
 
-Order Book Dynamics: Depth volatility, bid-ask spread, order book imbalance.
+  *Order Book Dynamics*:
+  - Depth volatility
+  - Bid-ask spread
+  - Order book imbalance
 
-Volume Metrics: Volume-weighted mid-price, cumulative volume, trade volume proxy.
+  *Volume Metrics*:
+  - Volume-weighted mid-price
+  - Cumulative volume
+  - Trade volume proxy
 
-Normalized Returns: Mid-price returns, PnL derivatives.
+  *Normalized Returns*:
+  - Mid-price returns
+  - PnL derivatives
 
-Synthetic Data Generation (GAN)
+### 2. Synthetic Data Generation (GAN)
 
-Input: Original data + engineered features (limited historical samples).
+**Input**: Original data + engineered features (limited historical samples)
 
-GAN Training: A Wasserstein GAN (WGAN-GP) learns the joint distribution of raw and derived features to generate indistinguishable synthetic market data, preserving:
+**GAN Architecture**:
+- Wasserstein GAN with Gradient Penalty (WGAN-GP)
+- Preserves:
+  - Temporal dependencies (volatility clustering)
+  - Microstructure patterns (order book dynamics)
+  - Volume correlations
 
-Temporal dependencies (e.g., volatility clustering).
+**Output**: Augmented dataset (real + synthetic) for RL training
 
-Microstructure patterns (order book dynamics, volume correlations).
+### 3. Reinforcement Learning Agent Training
 
-Output: Augmented dataset (real + synthetic) for robust RL training.
+**Agent Selection**:
+- Backtest on synthetic data (Sharpe ratio comparison)
+- Algorithm assignment:
+  - PPO for high-frequency assets
+  - SAC for multi-modal spaces
 
-Reinforcement Learning Agent Selection & Training
+**Training Framework**:
+- *State Space*: Normalized features + portfolio context
+- *Reward Function*: Sharpe ratio + drawdown penalties
+- *Environment*: Synthetic market with stochastic slippage
 
-Per-Product Analysis: Evaluate synthetic data performance (e.g., backtest Sharpe ratio) to select the best RL algorithm (PPO for high-frequency, SAC for multi-modal spaces).
+### 4. Multi-Agent Portfolio Optimization
 
-Agent Training: Each product’s agent learns via:
+**Coordination**:
+- Hierarchical RL architecture
+- Meta-controller for risk-parity allocation
+- Product-specific agent policies
 
-State Space: Normalized features + portfolio context (e.g., inventory risk).
+**Optimization Targets**:
+- Portfolio CAGR
+- Sortino ratio
+- Maximum drawdown constraints
 
-Reward: Risk-adjusted returns (e.g., Sharpe + penalty for drawdowns).
-
-Environment: Synthetic market simulator with stochastic slippage.
-
-Multi-Agent Portfolio Optimization
-
-Framework: Hierarchical RL or Markov Game to coordinate agents:
-
-Meta-controller allocates capital based on correlation-aware risk parity.
-
-Individual agents execute product-specific strategies.
-
-Optimization: Maximize portfolio-wide metrics (e.g., CAGR, Sortino ratio) via shared critic or auction-based rebalancing.
+**Implementation**:
+- Shared critic network
+- Auction-based rebalancing mechanism
