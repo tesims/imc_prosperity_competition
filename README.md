@@ -1,5 +1,17 @@
 # multi-agent-reinforcement-learning
 
+This project develops a multi-asset trading framework combining market microstructure analysis with reinforcement learning. 
+
+Starting with L2 order book data, I engineer features capturing both traditional technical indicators (MACD, RSI) and microstructure dynamics (order flow imbalance, volume-weighted spreads). 
+
+To address data limitations, I implement a conditional GAN architecture with spectral normalization, trained to preserve key statistical properties including autocorrelation structures and fat-tailed return distributions. 
+
+Individual trading agents for each asset class are optimized using proximal policy optimization (PPO), with reward functions incorporating both Sharpe ratio and drawdown constraints. 
+
+The multi-agent coordination problem is formulated as a partially observable Markov game, where a meta-controller performs risk-aware capital allocation across strategies. 
+
+While computational constraints limit the scale of backtesting, the system demonstrates statistically significant outperformance versus baseline strategies in controlled experiments, particularly in regimes with elevated volatility.  This work provides a practical demonstration of how modern machine learning techniques can be adapted for quantitative trading while maintaining computational feasibility on limited hardware.
+
 Process Overview
 Data Cleaning & Feature Engineering
 
