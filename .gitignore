@@ -30,15 +30,18 @@ ENV/
 *.swp
 *.swo
 
-# macOS
-.DS_Store
-.AppleDouble
-.LSOverride
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Data files
+data/raw/
+data/processed*/
+spark-events/
 
 # Logs
 *.log
+log4j.properties
 
-# Local development settings
+# OS
+.DS_Store
 .env
-.env.local
-.env.*.local
