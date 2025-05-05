@@ -203,23 +203,25 @@ class TimeSeriesTrainer:
             epoch_d_losses = []
             
             for batch_idx, (real_batch,) in enumerate(data_loader):
-                current_batch_size = real_batch.size(0)
+                real_batch = real_batch.to(self.device)
                 
                 # Train discriminator
                 for _ in range(n_critic):
                     d_loss, g_loss = self.train_step(real_batch)
                     epoch_d_losses.append(d_loss)
                     epoch_g_losses.append(g_loss)
-                
-                # Record average losses for the epoch
-                g_losses.append(np.mean(epoch_g_losses))
-                d_losses.append(np.mean(epoch_d_losses))
+            
+            # Calculate average losses for the epoch
+            avg_d_loss = np.mean(epoch_d_losses)
+            avg_g_loss = np.mean(epoch_g_losses)
+            d_losses.append(avg_d_loss)
+            g_losses.append(avg_g_loss)
             
             # Print progress and save checkpoint every 10 epochs
             if (epoch + 1) % 10 == 0:
                 print(f"Epoch [{epoch+1}/{n_epochs}] "
-                      f"D_loss: {d_losses[-1]:.4f} "
-                      f"G_loss: {g_losses[-1]:.4f}")
+                      f"D_loss: {avg_d_loss:.4f} "
+                      f"G_loss: {avg_g_loss:.4f}")
                 
                 if checkpoint_dir:
                     self.save_checkpoint(os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch+1}.pt"))
