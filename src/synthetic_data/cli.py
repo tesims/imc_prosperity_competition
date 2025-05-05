@@ -1,39 +1,47 @@
 import argparse
 import os
-from .generator import SyntheticDataGenerator
+from data import FeatureDataLoader
+from .train import TimeSeriesTrainer
 
 def main():
-    parser = argparse.ArgumentParser(description='Generate synthetic trading data')
+    parser = argparse.ArgumentParser(description='Generate synthetic trading data using GAN')
+    parser.add_argument('--product', type=str, required=True,
+                       help='Product to generate data for')
     parser.add_argument('--output-dir', type=str, default='data/synthetic',
                        help='Directory to save synthetic data')
-    parser.add_argument('--n-samples', type=int, default=1000,
-                       help='Number of samples to generate per product')
-    parser.add_argument('--product', type=str,
-                       help='Specific product to generate data for (optional)')
+    parser.add_argument('--sequence-length', type=int, default=100,
+                       help='Length of sequences to generate')
+    parser.add_argument('--batch-size', type=int, default=32,
+                       help='Training batch size')
+    parser.add_argument('--epochs', type=int, default=5000,
+                       help='Number of training epochs')
+    parser.add_argument('--validation-samples', type=int, default=25,
+                       help='Number of synthetic samples for validation')
     
     args = parser.parse_args()
     
-    # Create output directory if it doesn't exist
-    os.makedirs(args.output_dir, exist_ok=True)
+    # Initialize feature loader
+    feature_loader = FeatureDataLoader()
     
-    # Initialize generator
-    generator = SyntheticDataGenerator()
+    # Initialize and train GAN
+    trainer = TimeSeriesTrainer(
+        feature_loader=feature_loader,
+        product=args.product,
+        sequence_length=args.sequence_length,
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        validation_samples=args.validation_samples
+    )
     
-    if args.product:
-        # Generate data for specific product
-        print(f"Generating {args.n_samples} samples for {args.product}")
-        df = generator.generate_synthetic_data(args.product, args.n_samples)
-        output_file = os.path.join(args.output_dir, f"{args.product}_synthetic.csv")
-        df.to_csv(output_file, index=False)
-        print(f"Saved synthetic data to {output_file}")
-    else:
-        # Generate data for all products
-        print(f"Generating {args.n_samples} samples for each product")
-        synthetic_data = generator.generate_all_products(args.n_samples)
-        for product, df in synthetic_data.items():
-            output_file = os.path.join(args.output_dir, f"{product}_synthetic.csv")
-            df.to_csv(output_file, index=False)
-            print(f"Saved synthetic data for {product} to {output_file}")
+    # Train the model
+    trainer.train()
+    
+    # Plot results
+    trainer.plot_training_history()
+    trainer.plot_sample_comparison()
+    
+    # Save synthetic data
+    trainer.save_synthetic_data(args.output_dir)
 
 if __name__ == "__main__":
     main()

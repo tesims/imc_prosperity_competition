@@ -19,7 +19,9 @@ setup(
         "tensorflow",
         "numpy",
         "pandas",
-        "scikit-learn"
+        "scikit-learn",
+        "matplotlib",
+        "seaborn"
     ],
     include_package_data=True,
 )

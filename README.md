@@ -1,87 +1,116 @@
-# multi-agent-reinforcement-learning
+# IMC Prosperity Trading System
 
-This project develops a multi-asset trading framework combining market microstructure analysis with reinforcement learning. 
+A complete pipeline for processing L2 orderbook data, generating synthetic data using GANs, and training RL trading agents.
 
-Starting with L2 order book data, I engineer features capturing both traditional technical indicators (MACD, RSI) and microstructure dynamics (order flow imbalance, volume-weighted spreads). 
+## Project Structure
 
-To address data limitations, I implement a conditional GAN architecture with spectral normalization, trained to preserve key statistical properties including autocorrelation structures and fat-tailed return distributions. 
+```
+.
+├── data/
+│   ├── raw/              # Raw L2 orderbook CSV files
+│   ├── processed/        # Processed orderbook data by product
+│   ├── features/         # Feature-engineered data
+│   └── synthetic/        # GAN-generated synthetic data
+├── models/              # Trained models (GAN and RL agents)
+├── src/
+│   ├── orderbook_features/  # Feature engineering module
+│   ├── synthetic_data/      # GAN implementation
+│   ├── rl_agents/          # RL trading agents
+│   └── pipeline.py         # Main pipeline script
+└── requirements.txt
+```
 
-Individual trading agents for each asset class are optimized using proximal policy optimization (PPO), with reward functions incorporating both Sharpe ratio and drawdown constraints. 
+## Installation
 
-The multi-agent coordination problem is formulated as a partially observable Markov game, where a meta-controller performs risk-aware capital allocation across strategies. 
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/imc-prosperity.git
+cd imc-prosperity
+```
 
-While computational constraints limit the scale of backtesting, the system demonstrates statistically significant outperformance versus baseline strategies in controlled experiments, particularly in regimes with elevated volatility.  This work provides a practical demonstration of how modern machine learning techniques can be adapted for quantitative trading while maintaining computational feasibility on limited hardware.
+2. Create a virtual environment (optional but recommended):
+```bash
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
+```
 
-## Process Overview
+3. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-### 1. Data Cleaning & Feature Engineering
+## Usage
 
-**Input**: Raw L2 order book data (bid/ask prices, volumes, PnL) for each product (stocks, ETFs, etc.)
+1. Place your L2 orderbook data files in the `data/raw/` directory. Files should be CSV format with columns:
+   - timestamp
+   - product
+   - bid_price_1, bid_size_1, ask_price_1, ask_size_1, etc.
 
-**Processing**:
-- **Cleaning**:
-  - Handle missing values
-  - Remove outliers
-  - Align timestamps
+2. Run the complete pipeline:
+```bash
+python -m src.pipeline
+```
 
-- **Feature Calculation** (per product):
-  *Classic Indicators*:
-  - Rolling volatility
-  - RSI, MACD, CCI
-  - Z-score normalization
+This will:
+- Discover available products in your data
+- Process raw orderbook data into features
+- Generate synthetic data using GANs
+- Train RL agents for each product
 
-  *Order Book Dynamics*:
-  - Depth volatility
-  - Bid-ask spread
-  - Order book imbalance
+## Pipeline Steps
 
-  *Volume Metrics*:
-  - Volume-weighted mid-price
-  - Cumulative volume
-  - Trade volume proxy
+1. **Data Processing**
+   - Processes raw L2 orderbook data
+   - Calculates features like price, volume, volatility
+   - Organizes data by product
 
-  *Normalized Returns*:
-  - Mid-price returns
-  - PnL derivatives
+2. **Synthetic Data Generation**
+   - Uses GANs to generate synthetic market data
+   - Helps augment training data for RL agents
+   - Preserves market characteristics
 
-### 2. Synthetic Data Generation (GAN)
+3. **RL Agent Training**
+   - Trains product-specific trading agents
+   - Uses both real and synthetic data
+   - Implements sophisticated reward function
+   - Manages positions and risk
 
-**Input**: Original data + engineered features (limited historical samples)
+## Configuration
 
-**GAN Architecture**:
-- Wasserstein GAN with Gradient Penalty (WGAN-GP)
-- Preserves:
-  - Temporal dependencies (volatility clustering)
-  - Microstructure patterns (order book dynamics)
-  - Volume correlations
+Key parameters can be adjusted in `src/pipeline.py`:
 
-**Output**: Augmented dataset (real + synthetic) for RL training
+```python
+pipeline = TradingPipeline(
+    raw_data_dir="data/raw",
+    processed_data_dir="data/processed",
+    features_dir="data/features",
+    synthetic_dir="data/synthetic",
+    models_dir="models",
+    gan_epochs=1000,    # Number of GAN training epochs
+    rl_episodes=300     # Number of RL training episodes
+)
+```
 
-### 3. Reinforcement Learning Agent Training
+## Output
 
-**Agent Selection**:
-- Backtest on synthetic data (Sharpe ratio comparison)
-- Algorithm assignment:
-  - PPO for high-frequency assets
-  - SAC for multi-modal spaces
+The pipeline produces:
 
-**Training Framework**:
-- *State Space*: Normalized features + portfolio context
-- *Reward Function*: Sharpe ratio + drawdown penalties
-- *Environment*: Synthetic market with stochastic slippage
+1. **Processed Data**
+   - Feature-engineered data for each product
+   - Combined real and synthetic data
 
-### 4. Multi-Agent Portfolio Optimization
+2. **Trained Models**
+   - GAN models for each product
+   - RL trading agents for each product
 
-**Coordination**:
-- Hierarchical RL architecture
-- Meta-controller for risk-parity allocation
-- Product-specific agent policies
+3. **Performance Metrics**
+   - Training rewards and Sharpe ratios
+   - Position and PnL statistics
 
-**Optimization Targets**:
-- Portfolio CAGR
-- Sortino ratio
-- Maximum drawdown constraints
+## Contributing
 
-**Implementation**:
-- Shared critic network
-- Auction-based rebalancing mechanism
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a new Pull Request
