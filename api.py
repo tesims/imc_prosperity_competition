@@ -7,9 +7,13 @@ import torch
 import logging
 from pathlib import Path
 import traceback
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 import uvicorn
+import uuid
+from datetime import datetime
+import psutil
+import os
 
 # Pipeline components
 from src.pipeline import TradingPipeline
@@ -53,8 +57,20 @@ class ProductResponse(BaseModel):
     status: str
     message: Optional[str] = None
 
+# Task management
+class TaskStatus(BaseModel):
+    task_id: str
+    status: str
+    progress: Optional[float] = None
+    message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+
 # Global pipeline instance
 pipeline = None
+
+# Global task store
+tasks: Dict[str, TaskStatus] = {}
 
 def initialize_pipeline(config: PipelineConfig):
     global pipeline
@@ -79,6 +95,27 @@ def initialize_pipeline(config: PipelineConfig):
         rl_episodes=config.rl_episodes,
         sequence_length=config.sequence_length
     )
+
+def create_task() -> str:
+    """Create a new task and return its ID"""
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = TaskStatus(
+        task_id=task_id,
+        status="pending",
+        created_at=datetime.now(),
+        updated_at=datetime.now()
+    )
+    return task_id
+
+def update_task(task_id: str, status: str, progress: Optional[float] = None, message: Optional[str] = None):
+    """Update task status"""
+    if task_id in tasks:
+        tasks[task_id].status = status
+        if progress is not None:
+            tasks[task_id].progress = progress
+        if message is not None:
+            tasks[task_id].message = message
+        tasks[task_id].updated_at = datetime.now()
 
 @app.post("/initialize")
 async def initialize(config: PipelineConfig):
@@ -172,8 +209,13 @@ async def generate_synthetic_data(product: str, background_tasks: BackgroundTask
         raise HTTPException(status_code=400, detail="Pipeline not initialized")
     
     try:
+        # Create task
+        task_id = create_task()
+        update_task(task_id, "initializing", message=f"Starting synthetic data generation for {product}")
+        
         feat_file = Path(pipeline.features_dir) / f"{product}_features.csv"
         if not feat_file.exists():
+            update_task(task_id, "error", message=f"Features file not found for {product}")
             raise HTTPException(status_code=404, detail=f"Features file not found for {product}")
         
         features_df = pd.read_csv(feat_file)
@@ -201,15 +243,22 @@ async def generate_synthetic_data(product: str, background_tasks: BackgroundTask
         # Train GAN and generate samples in background
         def train_and_generate():
             try:
+                update_task(task_id, "training", progress=0.0)
                 logger.info(f"Starting GAN training for {product}")
-                logger.info(f"Training parameters: epochs={pipeline.gan_epochs}, sequence_length={sequences.shape[1]}, feature_dims={len(numeric_cols)}")
                 
-                # Create status file to indicate training has started
+                # Create status file
                 status_file = Path(pipeline.synthetic_dir) / f"{product}_synthetic.status"
                 with open(status_file, 'w') as f:
                     f.write("training")
                 
-                trainer.train(sequences, n_epochs=pipeline.gan_epochs)
+                # Train GAN with progress updates
+                for epoch in range(pipeline.gan_epochs):
+                    trainer.train_step(sequences)
+                    if epoch % 10 == 0:
+                        progress = epoch / pipeline.gan_epochs
+                        update_task(task_id, "training", progress=progress)
+                
+                update_task(task_id, "generating", progress=0.5)
                 logger.info(f"GAN training completed for {product}")
                 
                 minutes_per_day = 24 * 60
@@ -234,9 +283,12 @@ async def generate_synthetic_data(product: str, background_tasks: BackgroundTask
                 with open(status_file, 'w') as f:
                     f.write("completed")
                 
+                update_task(task_id, "completed", progress=1.0)
+                
             except Exception as e:
                 logger.error(f"Error in synthetic generation for {product}: {str(e)}")
                 logger.error(traceback.format_exc())
+                update_task(task_id, "error", message=str(e))
                 # Write error to status file
                 status_file = Path(pipeline.synthetic_dir) / f"{product}_synthetic.status"
                 with open(status_file, 'w') as f:
@@ -246,7 +298,8 @@ async def generate_synthetic_data(product: str, background_tasks: BackgroundTask
         
         return {
             "status": "success",
-            "message": f"Synthetic data generation started for {product}"
+            "message": f"Synthetic data generation started for {product}",
+            "task_id": task_id
         }
     except Exception as e:
         logger.error(f"Error in generate_synthetic: {str(e)}")
@@ -354,6 +407,43 @@ async def run_backtest(product: str):
         logger.error(f"Error in backtest: {str(e)}")
         logger.error(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """System health check endpoint"""
+    try:
+        # Get system metrics
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        return {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "system": {
+                "cpu_percent": cpu_percent,
+                "memory_percent": memory.percent,
+                "disk_percent": disk.percent
+            },
+            "pipeline": {
+                "initialized": pipeline is not None
+            }
+        }
+    except Exception as e:
+        logger.error(f"Health check failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/tasks/{task_id}")
+async def get_task_status(task_id: str):
+    """Get status of a background task"""
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return tasks[task_id]
+
+@app.get("/tasks")
+async def list_tasks():
+    """List all tasks"""
+    return list(tasks.values())
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000) 

@@ -7,6 +7,14 @@ from pathlib import Path
 
 BASE_URL = "http://localhost:8000"
 
+def test_health():
+    """Test health check endpoint"""
+    response = requests.get(f"{BASE_URL}/health")
+    print("\nTesting /health:")
+    print(f"Status Code: {response.status_code}")
+    print(f"Response: {response.json()}")
+    return response.status_code == 200
+
 def test_initialize():
     """Test pipeline initialization"""
     config = {
@@ -82,6 +90,28 @@ def test_process():
     print(f"Response: {response.json()}")
     return response.status_code == 200
 
+def wait_for_task(task_id: str, timeout: int = 60):
+    """Wait for a task to complete with timeout"""
+    start_time = time.time()
+    
+    while True:
+        if time.time() - start_time > timeout:
+            raise TimeoutError(f"Timeout waiting for task {task_id}")
+        
+        response = requests.get(f"{BASE_URL}/tasks/{task_id}")
+        if response.status_code != 200:
+            raise RuntimeError(f"Error getting task status: {response.json()}")
+        
+        task_status = response.json()
+        print(f"Task status: {task_status['status']}, Progress: {task_status.get('progress', 'N/A')}")
+        
+        if task_status['status'] == 'completed':
+            return task_status
+        elif task_status['status'] == 'error':
+            raise RuntimeError(f"Task failed: {task_status.get('message', 'Unknown error')}")
+        
+        time.sleep(1)
+
 def test_generate_synthetic():
     """Test synthetic data generation"""
     product = "BTC-USD"
@@ -89,7 +119,16 @@ def test_generate_synthetic():
     print("\nTesting /generate-synthetic/{product}:")
     print(f"Status Code: {response.status_code}")
     print(f"Response: {response.json()}")
-    return response.status_code == 200
+    
+    if response.status_code == 200:
+        task_id = response.json()['task_id']
+        try:
+            wait_for_task(task_id)
+            return True
+        except (TimeoutError, RuntimeError) as e:
+            print(f"Error: {e}")
+            return False
+    return False
 
 def test_train_agent():
     """Test RL agent training"""
@@ -98,7 +137,16 @@ def test_train_agent():
     print("\nTesting /train-agent/{product}:")
     print(f"Status Code: {response.status_code}")
     print(f"Response: {response.json()}")
-    return response.status_code == 200
+    
+    if response.status_code == 200:
+        task_id = response.json()['task_id']
+        try:
+            wait_for_task(task_id)
+            return True
+        except (TimeoutError, RuntimeError) as e:
+            print(f"Error: {e}")
+            return False
+    return False
 
 def test_backtest():
     """Test backtesting"""
@@ -109,34 +157,13 @@ def test_backtest():
     print(f"Response: {response.json()}")
     return response.status_code == 200
 
-def wait_for_file(filepath: str, timeout: int = 60):
-    """Wait for a file to exist with timeout"""
-    start_time = time.time()
-    status_file = str(Path(filepath).parent / f"{Path(filepath).stem}.status")
-    
-    while not Path(filepath).exists():
-        if time.time() - start_time > timeout:
-            # Check status file for error
-            if Path(status_file).exists():
-                with open(status_file, 'r') as f:
-                    status = f.read().strip()
-                    if status.startswith('error:'):
-                        raise RuntimeError(f"Generation failed: {status}")
-            raise TimeoutError(f"Timeout waiting for {filepath}")
-        
-        # Check status file
-        if Path(status_file).exists():
-            with open(status_file, 'r') as f:
-                status = f.read().strip()
-                if status.startswith('error:'):
-                    raise RuntimeError(f"Generation failed: {status}")
-                print(f"Current status: {status}")
-        
-        time.sleep(1)
-    print(f"File {filepath} is ready")
-
 def main():
     print("Starting API tests...")
+    
+    # Test health check
+    if not test_health():
+        print("Failed health check")
+        return
     
     # Test initialization
     if not test_initialize():
@@ -158,25 +185,9 @@ def main():
         print("Failed to generate synthetic data")
         return
     
-    # Wait for synthetic data generation to complete
-    print("\nWaiting for synthetic data generation to complete...")
-    try:
-        wait_for_file("output/synthetic/BTC-USD_synthetic.csv")
-    except TimeoutError as e:
-        print(f"Error: {e}")
-        return
-    
     # Test agent training
     if not test_train_agent():
         print("Failed to train agent")
-        return
-    
-    # Wait for agent training to complete
-    print("\nWaiting for agent training to complete...")
-    try:
-        wait_for_file("output/agents/BTC-USD_agent.pt")
-    except TimeoutError as e:
-        print(f"Error: {e}")
         return
     
     # Test backtesting
