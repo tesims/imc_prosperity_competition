@@ -107,6 +107,57 @@ class TimeSeriesTrainer:
         
         return scaled_data
     
+    def train_step(self, real_data: torch.Tensor) -> Tuple[float, float]:
+        """Perform one training step"""
+        batch_size = real_data.size(0)
+        
+        # Train discriminator
+        self.gan.discriminator.zero_grad()
+        
+        # Real data
+        d_real = self.gan.discriminator(real_data)
+        d_real_loss = -torch.mean(d_real)
+        
+        # Fake data
+        z = torch.randn(batch_size, self.latent_dims, device=self.device)
+        fake_data = self.gan.generator(z)
+        d_fake = self.gan.discriminator(fake_data.detach())
+        d_fake_loss = torch.mean(d_fake)
+        
+        # Gradient penalty
+        alpha = torch.rand(batch_size, 1, 1, device=self.device)
+        alpha = alpha.expand(-1, self.seq_length, self.feature_dims)
+        interpolates = alpha * real_data + (1 - alpha) * fake_data.detach()
+        interpolates.requires_grad_(True)
+        d_interpolates = self.gan.discriminator(interpolates)
+        
+        gradients = torch.autograd.grad(
+            outputs=d_interpolates,
+            inputs=interpolates,
+            grad_outputs=torch.ones_like(d_interpolates),
+            create_graph=True,
+            retain_graph=True
+        )[0]
+        
+        gradient_penalty = self.gradient_penalty_weight * ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        
+        # Total discriminator loss
+        d_loss = d_real_loss + d_fake_loss + gradient_penalty
+        d_loss.backward()
+        self.gan.discriminator.optimizer.step()
+        
+        # Train generator
+        self.gan.generator.zero_grad()
+        
+        fake_data = self.gan.generator(z)
+        g_fake = self.gan.discriminator(fake_data)
+        g_loss = -torch.mean(g_fake)
+        
+        g_loss.backward()
+        self.gan.generator.optimizer.step()
+        
+        return d_loss.item(), g_loss.item()
+    
     def train(self, real_data: torch.Tensor, n_epochs: int = 100, batch_size: int = 64, n_critic: int = 5,
               gradient_penalty_weight: float = 10.0, checkpoint_dir: str = None) -> Dict[str, List[float]]:
         """
@@ -143,10 +194,6 @@ class TimeSeriesTrainer:
         dataset = TensorDataset(scaled_data)
         data_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True, drop_last=True)
         
-        # Initialize optimizers
-        g_optimizer = optim.Adam(self.gan.generator.parameters(), lr=0.0002, betas=(0.5, 0.9))
-        d_optimizer = optim.Adam(self.gan.discriminator.parameters(), lr=0.0002, betas=(0.5, 0.9))
-        
         # Training metrics
         g_losses = []
         d_losses = []
@@ -160,73 +207,13 @@ class TimeSeriesTrainer:
                 
                 # Train discriminator
                 for _ in range(n_critic):
-                    d_optimizer.zero_grad()
-                    
-                    # Generate fake data
-                    z = torch.randn(current_batch_size, self.latent_dims, device=self.device)
-                    fake_data = self.gan.generator(z)
-                    
-                    # Ensure proper reshaping of generator output
-                    fake_data = fake_data.reshape(current_batch_size, self.seq_length, self.feature_dims).contiguous()
-                    
-                    # Calculate discriminator outputs
-                    real_validity = self.gan.discriminator(real_batch)
-                    fake_validity = self.gan.discriminator(fake_data.detach())
-                    
-                    # Calculate gradient penalty
-                    alpha = torch.rand(current_batch_size, 1, 1, device=self.device)
-                    alpha = alpha.expand(-1, self.seq_length, self.feature_dims)
-                    
-                    interpolates = alpha * real_batch + (1 - alpha) * fake_data.detach()
-                    interpolates.requires_grad_(True)
-                    
-                    d_interpolates = self.gan.discriminator(interpolates)
-                    
-                    fake = torch.ones_like(d_interpolates, device=self.device, requires_grad=False)
-                    gradients = torch.autograd.grad(
-                        outputs=d_interpolates,
-                        inputs=interpolates,
-                        grad_outputs=fake,
-                        create_graph=True,
-                        retain_graph=True,
-                        only_inputs=True
-                    )[0]
-                    
-                    gradients = gradients.reshape(current_batch_size, -1)
-                    gradient_penalty = gradient_penalty_weight * ((gradients.norm(2, dim=1) - 1) ** 2).mean()
-                    
-                    # Calculate discriminator loss
-                    d_loss = -torch.mean(real_validity) + torch.mean(fake_validity) + gradient_penalty
-                    d_loss.backward()
-                    
-                    # Clip gradients
-                    torch.nn.utils.clip_grad_norm_(self.gan.discriminator.parameters(), max_norm=1.0)
-                    d_optimizer.step()
-                    
-                    epoch_d_losses.append(d_loss.item())
+                    d_loss, g_loss = self.train_step(real_batch)
+                    epoch_d_losses.append(d_loss)
+                    epoch_g_losses.append(g_loss)
                 
-                # Train generator
-                g_optimizer.zero_grad()
-                
-                # Generate fake data
-                z = torch.randn(current_batch_size, self.latent_dims, device=self.device)
-                fake_data = self.gan.generator(z)
-                fake_data = fake_data.reshape(current_batch_size, self.seq_length, self.feature_dims).contiguous()
-                fake_validity = self.gan.discriminator(fake_data)
-                
-                # Calculate generator loss
-                g_loss = -torch.mean(fake_validity)
-                g_loss.backward()
-                
-                # Clip gradients
-                torch.nn.utils.clip_grad_norm_(self.gan.generator.parameters(), max_norm=1.0)
-                g_optimizer.step()
-                
-                epoch_g_losses.append(g_loss.item())
-            
-            # Record average losses for the epoch
-            g_losses.append(np.mean(epoch_g_losses))
-            d_losses.append(np.mean(epoch_d_losses))
+                # Record average losses for the epoch
+                g_losses.append(np.mean(epoch_g_losses))
+                d_losses.append(np.mean(epoch_d_losses))
             
             # Print progress and save checkpoint every 10 epochs
             if (epoch + 1) % 10 == 0:

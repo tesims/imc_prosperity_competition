@@ -26,7 +26,8 @@ class TradingPipeline:
         models_dir: str = "models",
         gan_epochs: int = 1000,
         rl_episodes: int = 300,
-        sequence_length: int = 50
+        sequence_length: int = 50,
+        synthetic_days: int = 30
     ):
         # Initialize directories
         self.raw_data_dir = Path(raw_data_dir)
@@ -44,6 +45,7 @@ class TradingPipeline:
         self.gan_epochs = gan_epochs
         self.rl_episodes = rl_episodes
         self.sequence_length = sequence_length
+        self.synthetic_days = synthetic_days
         
         # Initialize components
         self.feature_calculator = OrderBookFeatureCalculator()
