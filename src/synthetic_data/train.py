@@ -112,29 +112,29 @@ class TimeSeriesTrainer:
         batch_size = real_data.size(0)
         
         # Train discriminator
-        self.gan.discriminator.zero_grad()
+        self.gan.discriminator_optimizer.zero_grad()
         
         # Real data
-        d_real = self.gan.discriminator(real_data)
+        d_real = self.gan.discriminator(real_data.view(batch_size, -1))
         d_real_loss = -torch.mean(d_real)
         
         # Fake data
         z = torch.randn(batch_size, self.latent_dims, device=self.device)
         fake_data = self.gan.generator(z)
-        d_fake = self.gan.discriminator(fake_data.detach())
+        d_fake = self.gan.discriminator(fake_data.detach().view(batch_size, -1))
         d_fake_loss = torch.mean(d_fake)
         
         # Gradient penalty
-        alpha = torch.rand(batch_size, 1, 1, device=self.device)
-        alpha = alpha.expand(-1, self.seq_length, self.feature_dims)
-        interpolates = alpha * real_data + (1 - alpha) * fake_data.detach()
+        alpha = torch.rand(batch_size, 1, device=self.device)
+        alpha = alpha.expand(batch_size, self.seq_length * self.feature_dims)
+        interpolates = alpha * real_data.view(batch_size, -1) + (1 - alpha) * fake_data.detach().view(batch_size, -1)
         interpolates.requires_grad_(True)
         d_interpolates = self.gan.discriminator(interpolates)
         
         gradients = torch.autograd.grad(
             outputs=d_interpolates,
             inputs=interpolates,
-            grad_outputs=torch.ones_like(d_interpolates),
+            grad_outputs=torch.ones_like(d_interpolates, device=self.device),
             create_graph=True,
             retain_graph=True
         )[0]
@@ -144,17 +144,17 @@ class TimeSeriesTrainer:
         # Total discriminator loss
         d_loss = d_real_loss + d_fake_loss + gradient_penalty
         d_loss.backward()
-        self.gan.discriminator.optimizer.step()
+        self.gan.discriminator_optimizer.step()
         
         # Train generator
-        self.gan.generator.zero_grad()
+        self.gan.generator_optimizer.zero_grad()
         
         fake_data = self.gan.generator(z)
-        g_fake = self.gan.discriminator(fake_data)
+        g_fake = self.gan.discriminator(fake_data.view(batch_size, -1))
         g_loss = -torch.mean(g_fake)
         
         g_loss.backward()
-        self.gan.generator.optimizer.step()
+        self.gan.generator_optimizer.step()
         
         return d_loss.item(), g_loss.item()
     

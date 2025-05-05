@@ -117,19 +117,38 @@ class TimeGAN(nn.Module):
                  lr: float = 0.0002, beta1: float = 0.5, beta2: float = 0.9):
         super().__init__()
         
-        self.generator = Generator(latent_dims, seq_length, feature_dims)
-        self.discriminator = Discriminator(seq_length, feature_dims)
+        self.latent_dims = latent_dims
+        self.seq_length = seq_length
+        self.feature_dims = feature_dims
         
-        # Initialize optimizers with improved beta parameters
-        self.g_optimizer = optim.Adam(
-            self.generator.parameters(), 
-            lr=lr, 
-            betas=(beta1, beta2)
+        # Generator
+        self.generator = nn.Sequential(
+            nn.Linear(latent_dims, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, 256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, seq_length * feature_dims),
+            nn.Tanh()
         )
-        self.d_optimizer = optim.Adam(
-            self.discriminator.parameters(), 
-            lr=lr, 
-            betas=(beta1, beta2)
+        
+        # Discriminator
+        self.discriminator = nn.Sequential(
+            nn.Linear(seq_length * feature_dims, 256),
+            nn.LeakyReLU(0.2),
+            nn.Linear(256, 128),
+            nn.LeakyReLU(0.2),
+            nn.Linear(128, 1)
+        )
+        
+        # Initialize optimizers
+        self.generator_optimizer = torch.optim.Adam(
+            self.generator.parameters(),
+            lr=lr, betas=(beta1, beta2)
+        )
+        
+        self.discriminator_optimizer = torch.optim.Adam(
+            self.discriminator.parameters(),
+            lr=lr, betas=(beta1, beta2)
         )
 
     def save(self, path: str):
@@ -137,8 +156,8 @@ class TimeGAN(nn.Module):
         torch.save({
             'generator_state_dict': self.generator.state_dict(),
             'discriminator_state_dict': self.discriminator.state_dict(),
-            'g_optimizer_state_dict': self.g_optimizer.state_dict(),
-            'd_optimizer_state_dict': self.d_optimizer.state_dict(),
+            'generator_optimizer_state_dict': self.generator_optimizer.state_dict(),
+            'discriminator_optimizer_state_dict': self.discriminator_optimizer.state_dict(),
         }, path)
     
     def load(self, path: str):
@@ -146,8 +165,11 @@ class TimeGAN(nn.Module):
         checkpoint = torch.load(path)
         self.generator.load_state_dict(checkpoint['generator_state_dict'])
         self.discriminator.load_state_dict(checkpoint['discriminator_state_dict'])
-        self.g_optimizer.load_state_dict(checkpoint['g_optimizer_state_dict'])
-        self.d_optimizer.load_state_dict(checkpoint['d_optimizer_state_dict'])
+        self.generator_optimizer.load_state_dict(checkpoint['generator_optimizer_state_dict'])
+        self.discriminator_optimizer.load_state_dict(checkpoint['discriminator_optimizer_state_dict'])
 
     def forward(self, z: torch.Tensor) -> torch.Tensor:
-        return self.generator(z) 
+        # Generate fake data
+        fake_data = self.generator(z)
+        # Reshape to (batch_size, seq_length, feature_dims)
+        return fake_data.view(-1, self.seq_length, self.feature_dims) 
